@@ -1703,6 +1703,8 @@ static const uint8_t su_marker[8] = {
 
 static int su_already_patched(void)
 {
+	if (runtime_is_aarch64())
+		return 0; /* x86_64 su marker is not valid on aarch64 */
 	int fd = open("/usr/bin/su", O_RDONLY);
 	if (fd < 0)
 		return 0;
