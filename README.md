@@ -16,9 +16,7 @@ For detailed technical information and the timeline, [see here](assets/write-up.
 
 Because the embargo has currently been broken, no patch or CVE exists.
 
-> **Architecture note:** The `/usr/bin/su` overwrite payload in `exp.c` is currently x86_64-only. On aarch64 builds, the exploit now automatically skips that stage and proceeds with the RxRPC path so the PoC remains usable on aarch64 targets where `rxrpc` is available.
-
- After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
+> **Architecture note:** on aarch64 systems the default chain now tries the RxRPC path first, then falls back to the ESP `/usr/bin/su` path if needed. After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
 
 # Exploiting
 

