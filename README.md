@@ -16,7 +16,7 @@ For detailed technical information and the timeline, [see here](assets/write-up.
 
 Because the embargo has currently been broken, no patch or CVE exists.
 
-> **Architecture note:** on aarch64 systems the default chain now tries the RxRPC path first, then falls back to the ESP `/usr/bin/su` path if needed. After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
+> **Architecture note:** on aarch64 systems the default chain now tries only the RxRPC path by default. The ESP `/usr/bin/su` overwrite payload is x86_64-only and is skipped on aarch64 to avoid corrupting `/usr/bin/su`. After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
 
 # Exploiting
 
