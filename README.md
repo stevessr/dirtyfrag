@@ -14,7 +14,11 @@ Dirty Frag is a case that extends the bug class to which [Dirty Pipe](https://di
 
 For detailed technical information and the timeline, [see here](assets/write-up.md).
 
-Because the embargo has currently been broken, no patch or CVE exists. After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
+Because the embargo has currently been broken, no patch or CVE exists.
+
+> **Architecture note:** The `/usr/bin/su` overwrite payload in `exp.c` is currently x86_64-only. On aarch64 builds, the exploit now automatically skips that stage and proceeds with the RxRPC path so the PoC remains usable on aarch64 targets where `rxrpc` is available.
+
+ After consultation with the maintainers on linux-distros@vs.openwall.org and at their request, this Dirty Frag document is being published. For the disclosure timeline, refer to the technical details.
 
 # Exploiting
 
